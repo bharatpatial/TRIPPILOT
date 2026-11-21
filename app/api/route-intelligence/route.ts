@@ -44,15 +44,43 @@ type OverpassResponse = {
   elements?: OverpassElement[];
 };
 
+type GeoapifyFeature = {
+  properties?: {
+    place_id?: string;
+    name?: string;
+    categories?: string[];
+    lat?: number;
+    lon?: number;
+    operator?: string;
+    opening_hours?: string;
+    address_line2?: string;
+    datasource?: { raw?: Record<string, string> };
+  };
+  geometry?: { coordinates?: [number, number] };
+};
+
+type GeoapifyResponse = {
+  features?: GeoapifyFeature[];
+};
+
 const EARTH_RADIUS_KM = 6371;
 const ROUTE_SAMPLE_SPACING_KM = 15;
 const ROUTE_SEARCH_RADIUS_METERS = 3000;
 const MAX_ROUTE_SAMPLES = 40;
+const GEOAPIFY_MAX_ROUTE_POSITIONS = 1500;
 // Short timeout limits waiting on shared public Overpass servers.
 const OVERPASS_TIMEOUT_MS = 7000;
 const FACILITY_LOOKUP_TIMEOUT_MS = 10000;
+const GEOAPIFY_PLACES_TIMEOUT_MS = 25000;
 const ROUTING_LOOKUP_TIMEOUT_MS = 14000;
 const ROUTING_ENDPOINT_TIMEOUT_MS = 8000;
+const GEOAPIFY_CATEGORIES = [
+  "catering.restaurant",
+  "catering.cafe",
+  "catering.fast_food",
+  "catering.food_court",
+  "service.vehicle.fuel",
+];
 
 const OVERPASS_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
@@ -300,11 +328,34 @@ function nearestRoutePosition(
   return { distanceKm: bestDistance, alongKm: bestAlong };
 }
 
-function buildOverpassQuery(samples: Coordinate[]): string {
+function simplifyRouteForPlaces(
+  routePoints: [number, number][],
+): [number, number][] {
+  if (routePoints.length <= GEOAPIFY_MAX_ROUTE_POSITIONS) {
+    return routePoints;
+  }
+
+  return Array.from({ length: GEOAPIFY_MAX_ROUTE_POSITIONS }, (_, index) => {
+    const sourceIndex = Math.round(
+      (index * (routePoints.length - 1)) /
+        (GEOAPIFY_MAX_ROUTE_POSITIONS - 1),
+    );
+    return routePoints[sourceIndex];
+  });
+}
+
+function buildOverpassQuery(
+  samples: Coordinate[],
+  includeBusinesses: boolean,
+): string {
   const selectors = samples
     .map(
       ({ lat, lon }) => `
-        nwr(around:${ROUTE_SEARCH_RADIUS_METERS},${lat},${lon})[amenity~"^(fuel|restaurant|cafe|fast_food|food_court)$"];
+        ${
+          includeBusinesses
+            ? `nwr(around:${ROUTE_SEARCH_RADIUS_METERS},${lat},${lon})[amenity~"^(fuel|restaurant|cafe|fast_food|food_court)$"];`
+            : ""
+        }
         nwr(around:${ROUTE_SEARCH_RADIUS_METERS},${lat},${lon})[barrier~"^(toll_booth|toll_gantry)$"];
         nwr(around:${ROUTE_SEARCH_RADIUS_METERS},${lat},${lon})[highway="toll_gantry"];
       `,
@@ -356,6 +407,7 @@ async function queryOverpass(
 
 async function findFacilities(
   routePoints: [number, number][],
+  includeBusinesses = true,
 ): Promise<Facility[]> {
   if (routePoints.length < 2) {
     return [];
@@ -363,7 +415,10 @@ async function findFacilities(
 
   const samples = sampleRoute(routePoints);
   const deadline = Date.now() + FACILITY_LOOKUP_TIMEOUT_MS;
-  const elements = await queryOverpass(buildOverpassQuery(samples), deadline);
+  const elements = await queryOverpass(
+    buildOverpassQuery(samples, includeBusinesses),
+    deadline,
+  );
 
   const unique = new Map<string, Facility>();
 
@@ -411,6 +466,231 @@ async function findFacilities(
   return [...unique.values()].sort(
     (a, b) => a.distanceAlongRouteKm - b.distanceAlongRouteKm,
   );
+}
+
+async function findGeoapifyFacilities(
+  routePoints: [number, number][],
+  apiKey: string,
+): Promise<Facility[]> {
+  const response = await fetch("https://api.geoapify.com/v2/places", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+    },
+    body: JSON.stringify({
+      categories: GEOAPIFY_CATEGORIES,
+      filter: {
+        type: "polyline",
+        geometry: {
+          type: "LineString",
+          coordinates: simplifyRouteForPlaces(routePoints),
+        },
+        buffer: ROUTE_SEARCH_RADIUS_METERS,
+      },
+      limit: 500,
+      lang: "en",
+    }),
+    signal: AbortSignal.timeout(GEOAPIFY_PLACES_TIMEOUT_MS),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const responseText = await response.text();
+    let providerMessage = "";
+    try {
+      const parsed: unknown = JSON.parse(responseText);
+      if (parsed && typeof parsed === "object") {
+        const errorPayload = parsed as {
+          message?: unknown;
+          error?: unknown;
+        };
+        const detail =
+          typeof errorPayload.message === "string"
+            ? errorPayload.message
+            : typeof errorPayload.error === "string"
+              ? errorPayload.error
+              : "";
+        providerMessage = detail.slice(0, 180);
+      }
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+    }
+
+    throw new Error(
+      `Geoapify Places API returned status ${response.status}${
+        providerMessage ? `: ${providerMessage}` : ""
+      }`,
+    );
+  }
+
+  const payload: GeoapifyResponse = await response.json();
+  if (!Array.isArray(payload.features)) {
+    throw new Error("Geoapify Places API returned an invalid response");
+  }
+
+  const unique = new Map<string, Facility>();
+
+  for (const feature of payload.features) {
+    const properties = feature.properties || {};
+    const categories = properties.categories || [];
+    const raw = properties.datasource?.raw || {};
+    const coordinates = feature.geometry?.coordinates;
+    const lat = Number(properties.lat ?? coordinates?.[1]);
+    const lon = Number(properties.lon ?? coordinates?.[0]);
+    const name = String(properties.name || "").trim();
+
+    if (!name || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+
+    const isFuel = categories.includes("service.vehicle.fuel");
+    const isRestaurant = categories.some((category) =>
+      category.startsWith("catering."),
+    );
+    if (!isFuel && !isRestaurant) continue;
+
+    const category: Facility["category"] =
+      isFuel && ["yes", "true"].includes((raw["fuel:cng"] || "").toLowerCase())
+        ? "cng"
+        : isFuel
+          ? "fuel"
+          : "restaurant";
+    const coordinate = { lat, lon };
+    const nearest = nearestRoutePosition(coordinate, routePoints);
+
+    if (nearest.distanceKm > ROUTE_SEARCH_RADIUS_METERS / 1000) continue;
+
+    const id =
+      properties.place_id || `geoapify-${category}-${lat.toFixed(6)}-${lon.toFixed(6)}`;
+    const details = [
+      properties.operator || raw.operator,
+      properties.opening_hours || raw.opening_hours,
+      raw["fuel:diesel"] === "yes" ? "Diesel" : "",
+      raw["fuel:petrol"] === "yes" ? "Petrol" : "",
+      category === "cng" ? "CNG" : "",
+      properties.address_line2,
+    ].filter((value): value is string => Boolean(value));
+
+    unique.set(id, {
+      id,
+      name,
+      category,
+      lat,
+      lon,
+      distanceFromRouteKm: Math.round(nearest.distanceKm * 10) / 10,
+      distanceAlongRouteKm: Math.round(nearest.alongKm * 10) / 10,
+      details,
+      mapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        `${name} ${lat},${lon}`,
+      )}`,
+      sourceUrl: `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`,
+    });
+  }
+
+  return [...unique.values()].sort(
+    (a, b) => a.distanceAlongRouteKm - b.distanceAlongRouteKm,
+  );
+}
+
+async function getRouteFacilities(
+  routePoints: [number, number][],
+): Promise<{
+  facilities: Facility[];
+  facilitiesWarning: string;
+  placesProvider: "Geoapify" | "OpenStreetMap";
+}> {
+  const apiKey = process.env.GEOAPIFY_API_KEY?.trim();
+
+  if (!apiKey) {
+    try {
+      const facilities = await findFacilities(routePoints);
+      return {
+        facilities,
+        facilitiesWarning: facilities.length
+          ? ""
+          : "No named facilities were found in the OpenStreetMap data near this route. Configure a free Geoapify key for route-corridor place search; map coverage may still be incomplete.",
+        placesProvider: "OpenStreetMap",
+      };
+    } catch (error) {
+      console.error("Route facilities lookup failed:", error);
+      return {
+        facilities: [],
+        facilitiesWarning:
+          "OpenStreetMap place searches timed out. Configure a free Geoapify key or try again later; route calculation is still available.",
+        placesProvider: "OpenStreetMap",
+      };
+    }
+  }
+
+  let geoapifyFailureReason = "returned no named places";
+
+  try {
+    const [geoapifyFacilities, tollLookup] = await Promise.allSettled([
+      findGeoapifyFacilities(routePoints, apiKey),
+      findFacilities(routePoints, false),
+    ]);
+
+    if (geoapifyFacilities.status === "rejected") {
+      throw geoapifyFacilities.reason;
+    }
+
+    if (geoapifyFacilities.value.length) {
+      const tollFacilities =
+        tollLookup.status === "fulfilled" ? tollLookup.value : [];
+      if (tollLookup.status === "rejected") {
+        console.error("OpenStreetMap toll lookup failed:", tollLookup.reason);
+      }
+
+      return {
+        facilities: [...geoapifyFacilities.value, ...tollFacilities].sort(
+          (a, b) => a.distanceAlongRouteKm - b.distanceAlongRouteKm,
+        ),
+        facilitiesWarning:
+          tollLookup.status === "rejected"
+            ? "Food and fuel stops were loaded from Geoapify, but mapped toll points could not be loaded from OpenStreetMap."
+            : "",
+        placesProvider: "Geoapify",
+      };
+    }
+  } catch (error) {
+    console.error("Geoapify places lookup failed:", error);
+    if (
+      error instanceof Error &&
+      error.message.startsWith("Geoapify Places API returned status ")
+    ) {
+      geoapifyFailureReason = error.message.replace(
+        "Geoapify Places API returned status ",
+        "returned HTTP ",
+      );
+    } else if (
+      error instanceof Error &&
+      error.message === "Geoapify Places API returned an invalid response"
+    ) {
+      geoapifyFailureReason = "returned an invalid response";
+    } else {
+      geoapifyFailureReason = "request failed or timed out";
+    }
+  }
+
+  try {
+    const facilities = await findFacilities(routePoints);
+    const facilitiesWarning = facilities.length
+      ? `Geoapify ${geoapifyFailureReason}; these results use OpenStreetMap data.`
+      : `Geoapify ${geoapifyFailureReason}, and OpenStreetMap did not return named stops. Map coverage may be incomplete.`;
+
+    return {
+      facilities,
+      facilitiesWarning,
+      placesProvider: "OpenStreetMap",
+    };
+  } catch (error) {
+    console.error("OpenStreetMap fallback lookup failed:", error);
+    return {
+      facilities: [],
+      facilitiesWarning:
+        `Geoapify ${geoapifyFailureReason}, and OpenStreetMap stop searches could not be completed. Check the key or try again later.`,
+      placesProvider: "OpenStreetMap",
+    };
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -480,21 +760,11 @@ export async function POST(request: NextRequest) {
       }),
     );
 
-    let facilities: Facility[] = [];
-    let facilitiesWarning = "";
-
-    try {
-      facilities = await findFacilities(routes[0].geometry.coordinates);
-
-      if (!facilities.length) {
-        facilitiesWarning =
-          "No named facilities were found in the OpenStreetMap data near this route. This does not mean no businesses exist; map coverage may be incomplete.";
-      }
-    } catch (error) {
-      console.error("Route facilities lookup failed:", error);
-      facilitiesWarning =
-        "The driving route was found, but OpenStreetMap place searches timed out. Try again shortly; route calculation is still available.";
-    }
+    const {
+      facilities,
+      facilitiesWarning,
+      placesProvider,
+    } = await getRouteFacilities(routes[0].geometry.coordinates);
 
     return NextResponse.json({
       origin,
@@ -504,6 +774,7 @@ export async function POST(request: NextRequest) {
       routes,
       facilities,
       facilitiesWarning,
+      placesProvider,
       tollPricing: {
         status: "unavailable",
         total: null,
@@ -515,8 +786,7 @@ export async function POST(request: NextRequest) {
       dataNotes: {
         routing:
           "Driving route geometry and distance come from a public OSRM-compatible routing service, with a fallback if the primary is unavailable; live traffic is not included.",
-        places:
-          "Named facilities are OpenStreetMap records. Distances are calculated against the full route geometry, not sampled route points. Coverage and opening status may be incomplete.",
+        places: `Named facilities are searched using ${placesProvider}. Distances are calculated against the full route geometry, not sampled route points. Coverage and opening status may be incomplete.`,
         tolls:
           "OpenStreetMap toll features identify mapped locations only; they do not provide dependable current vehicle-specific fees. Toll prices are therefore shown as unavailable rather than incorrectly as zero.",
       },

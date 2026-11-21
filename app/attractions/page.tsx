@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import {
   TripPilotShell,
   useTripPilot,
@@ -146,6 +147,15 @@ export default function AttractionsPage() {
     speakZoya,
     startZoyaVoice
   } = controller;
+  const initialAttractionLoad = useRef(false);
+
+  useEffect(() => {
+    if (!sessionReady || initialAttractionLoad.current) return;
+    initialAttractionLoad.current = true;
+
+    const location = attractionSearch.trim();
+    if (location) void loadAttractions(location);
+  }, [sessionReady, attractionSearch, loadAttractions]);
 
   return (
     <TripPilotShell controller={controller}>

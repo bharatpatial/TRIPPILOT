@@ -417,6 +417,29 @@ function readItinerarySteps(
   return result;
 }
 
+const DEFAULT_TRIP_FORM = {
+  from: "Ferozepur City",
+  destination: "Manali",
+  start: "2026-09-12",
+  end: "2026-09-16",
+  travellers: "2",
+  budget: "30000",
+  travelType: "Adventure",
+  transport: "Flight",
+};
+
+const DEFAULT_TRIP_PREFERENCES =
+  "Family-friendly adventure with local food, scenic views and a comfortable pace";
+
+const LEGACY_DEFAULT_TRIP_FORM = {
+  ...DEFAULT_TRIP_FORM,
+  from: "Ferozepur",
+  transport: "Train",
+};
+
+const LEGACY_DEFAULT_TRIP_PREFERENCES =
+  "Local food, scenic views and a comfortable pace";
+
 const tripDays: TripDay[] = [
   {
     day: 1,
@@ -1001,10 +1024,14 @@ function Weather({
   data,
   loading,
   location,
+  error,
+  onRefresh,
 }: {
   data: WeatherData | null;
   loading: boolean;
   location: string;
+  error: string;
+  onRefresh: () => void;
 }) {
   return (
     <div className="weatherCard">
@@ -1025,14 +1052,22 @@ function Weather({
           <small>
             {loading
               ? `Checking ${location}...`
-              : data?.location ||
-                location}
+              : error
+                ? "Weather unavailable"
+                : data?.location || location || "Add a destination"}
           </small>
         </div>
-        <button aria-label="Live destination weather">
-          ⋮
+        <button
+          type="button"
+          aria-label="Refresh destination weather"
+          title={error || "Refresh destination weather"}
+          disabled={loading || !location}
+          onClick={onRefresh}
+        >
+          ↻
         </button>
       </div>
+      {error && <small className="weatherError" role="status">{error}</small>}
       <div className="forecast">
         {(data?.forecast || [])
           .slice(0, 5)
@@ -1178,7 +1213,7 @@ export function useTripPilot(
     useState<boolean | null>(null);
   const [preferences, setPreferences] =
     useState(
-      "Local food, scenic views and a comfortable pace",
+      DEFAULT_TRIP_PREFERENCES,
     );
   const [
     generatedDays,
@@ -1192,22 +1227,15 @@ export function useTripPilot(
       },
     ]);
   const lastAnnouncedWarning = useRef("");
-  const [form, setForm] = useState({
-    from: "Ferozepur",
-    destination: "Manali",
-    start: "2026-09-12",
-    end: "2026-09-16",
-    travellers: "2",
-    budget: "30000",
-    travelType: "Adventure",
-    transport: "Train",
-  });
+  const [form, setForm] = useState(DEFAULT_TRIP_FORM);
   const [
     weatherLocation,
     setWeatherLocation,
   ] = useState("Manali");
   const [weatherData, setWeatherData] =
     useState<WeatherData | null>(null);
+  const [weatherError, setWeatherError] =
+    useState("");
   const [
     weatherLoading,
     setWeatherLoading,
@@ -1279,21 +1307,81 @@ export function useTripPilot(
 
       if (saved) {
         const session = JSON.parse(saved);
-
-        if (session.form)
-          setForm(session.form);
-        if (session.preferences)
-          setPreferences(
-            session.preferences,
+        const savedForm =
+          session.form &&
+          typeof session.form === "object"
+            ? session.form
+            : {};
+        const isLegacyDefaultForm =
+          Object.entries(LEGACY_DEFAULT_TRIP_FORM).every(
+            ([field, value]) => savedForm[field] === value,
           );
-        if (Array.isArray(session.generatedDays)) {
+        const restoredForm = {
+          from:
+            savedForm.from ===
+            LEGACY_DEFAULT_TRIP_FORM.from
+              ? DEFAULT_TRIP_FORM.from
+              : typeof savedForm.from === "string" &&
+                  savedForm.from.trim()
+                ? savedForm.from
+                : DEFAULT_TRIP_FORM.from,
+          destination:
+            typeof savedForm.destination === "string" &&
+            savedForm.destination.trim()
+              ? savedForm.destination
+              : DEFAULT_TRIP_FORM.destination,
+          start:
+            typeof savedForm.start === "string" &&
+            savedForm.start
+              ? savedForm.start
+              : DEFAULT_TRIP_FORM.start,
+          end:
+            typeof savedForm.end === "string" &&
+            savedForm.end
+              ? savedForm.end
+              : DEFAULT_TRIP_FORM.end,
+          travellers:
+            typeof savedForm.travellers === "string" &&
+            savedForm.travellers
+              ? savedForm.travellers
+              : DEFAULT_TRIP_FORM.travellers,
+          budget:
+            typeof savedForm.budget === "string" &&
+            savedForm.budget
+              ? savedForm.budget
+              : DEFAULT_TRIP_FORM.budget,
+          travelType:
+            typeof savedForm.travelType === "string" &&
+            savedForm.travelType
+              ? savedForm.travelType
+              : DEFAULT_TRIP_FORM.travelType,
+          transport: isLegacyDefaultForm
+            ? DEFAULT_TRIP_FORM.transport
+            : typeof savedForm.transport === "string" &&
+                savedForm.transport
+              ? savedForm.transport
+              : DEFAULT_TRIP_FORM.transport,
+        };
+        setForm(restoredForm);
+        setPreferences(
+          typeof session.preferences === "string" &&
+            session.preferences.trim() &&
+            session.preferences !==
+              LEGACY_DEFAULT_TRIP_PREFERENCES
+            ? session.preferences
+            : DEFAULT_TRIP_PREFERENCES,
+        );
+        if (
+          Array.isArray(session.generatedDays) &&
+          session.generatedDays.length > 0
+        ) {
           const savedDestination = String(
-            session.form?.destination || "",
+            restoredForm.destination || "",
           )
             .toLowerCase()
             .replace(/[^a-z0-9]/g, "");
           const savedOrigin = String(
-            session.form?.from || "",
+            restoredForm.from || "",
           )
             .toLowerCase()
             .replace(/[^a-z0-9]/g, "");
@@ -1334,8 +1422,8 @@ export function useTripPilot(
                 usedSavedPlaces.add(savedDestination);
                 return {
                   ...day,
-                  place: session.form?.destination || savedPlace,
-                  title: `${session.form?.from || "Starting point"} to ${session.form?.destination || savedPlace} – Arrival and first exploration`,
+                  place: restoredForm.destination || savedPlace,
+                  title: `${restoredForm.from || "Starting point"} to ${restoredForm.destination || savedPlace} – Arrival and first exploration`,
                 };
               }
 
@@ -1399,7 +1487,7 @@ export function useTripPilot(
           );
 
           setGeneratedDays(repairedDays);
-        }
+        } else setGeneratedDays(tripDays);
         if (Array.isArray(session.liveAttractions))
           setLiveAttractions(
             session.liveAttractions,
@@ -1468,9 +1556,6 @@ export function useTripPilot(
         window.sessionStorage.removeItem(
           "trippilot-featured-attraction",
         );
-        window.setTimeout(() => {
-          void loadAttractions(pendingFeaturedAttraction);
-        }, 0);
       }
     } catch {
       window.sessionStorage.removeItem(
@@ -1717,7 +1802,13 @@ const destinationCurrency = useMemo(
 
     const destination = form.destination.trim();
 
-    if (!destination) return;
+    if (!destination) {
+      setWeatherLocation("");
+      setWeatherData(null);
+      setWeatherError("");
+      setWeatherLoading(false);
+      return;
+    }
 
     const timer = window.setTimeout(() => {
       void loadWeather(destination);
@@ -2416,6 +2507,7 @@ const destinationCurrency = useMemo(
       ) {
         setWeatherLocation(cleanLocation);
         setWeatherData(cached.data);
+        setWeatherError("");
         setWeatherLoading(false);
         return;
       }
@@ -2424,16 +2516,26 @@ const destinationCurrency = useMemo(
     }
 
     setWeatherLocation(cleanLocation);
+    setWeatherError("");
+    setWeatherData(null);
     setWeatherLoading(true);
     try {
       const response = await fetch(
         `${API_BASE}/api/weather?location=${encodeURIComponent(cleanLocation)}`,
-        { cache: "no-store" },
+        {
+          cache: "no-store",
+          signal: AbortSignal.timeout(20000),
+        },
       );
       const data = await response.json();
       if (!response.ok)
-        throw new Error(data.error);
+        throw new Error(
+          typeof data.error === "string"
+            ? data.error
+            : "Weather service returned an error.",
+        );
       setWeatherData(data);
+      setWeatherError("");
       window.sessionStorage.setItem(
         cacheKey,
         JSON.stringify({
@@ -2442,8 +2544,16 @@ const destinationCurrency = useMemo(
           savedAt: Date.now(),
         }),
       );
-    } catch {
+    } catch (error) {
       setWeatherData(null);
+      const message =
+        error instanceof Error && error.name === "TimeoutError"
+          ? "Weather request timed out. Try again."
+          : error instanceof Error
+            ? error.message
+            : "Weather is temporarily unavailable.";
+      setWeatherError(message);
+      console.error("Could not load sidebar weather:", error);
     } finally {
       setWeatherLoading(false);
     }
@@ -3188,7 +3298,6 @@ const destinationCurrency = useMemo(
       behavior: "smooth",
     });
     void loadWeather(destination);
-    void loadAttractions(destination);
   }
   function languageFromText(
     text: string,
@@ -4434,6 +4543,7 @@ const destinationCurrency = useMemo(
     setWeatherLocation,
     weatherData,
     setWeatherData,
+    weatherError,
     weatherLoading,
     setWeatherLoading,
     exchangeRate,
@@ -4585,6 +4695,7 @@ export function TripPilotShell({
     setWeatherLocation,
     weatherData,
     setWeatherData,
+    weatherError,
     weatherLoading,
     setWeatherLoading,
     exchangeRate,
@@ -4746,7 +4857,7 @@ export function TripPilotShell({
             className={screen === "journey" ? "active" : ""}
             onClick={() => navigate("journey")}
           >
-            <span>⌁</span> Journey Planner
+            <span>⌁</span> Road Trip Planner
           </button>
         </nav>
         <div className="sideBottom">
@@ -4754,6 +4865,10 @@ export function TripPilotShell({
             data={weatherData}
             loading={weatherLoading}
             location={weatherLocation}
+            error={weatherError}
+            onRefresh={() =>
+              void loadWeather(weatherLocation || form.destination)
+            }
           />
           <button className="support">
             <span>◉</span> Support
@@ -4770,7 +4885,7 @@ export function TripPilotShell({
                 : screen === "attractions"
                   ? "Attractions"
                   : screen === "journey"
-                    ? "Journey Planner"
+                    ? "Road Trip Planner"
                     : screen === "travels"
                       ? "Travels"
                       : "TripPilot"}{" "}

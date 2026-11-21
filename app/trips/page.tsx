@@ -150,6 +150,30 @@ export default function TripsPage() {
     startZoyaVoice
   } = controller;
 
+  if (!current) {
+    return (
+      <TripPilotShell controller={controller}>
+        <main className="featurePage">
+          <div className="featureHeading">
+            <span>YOUR TRIPS</span>
+            <h1>No itinerary available</h1>
+            <p>
+              There are no itinerary days to show. Create a trip to build an
+              itinerary.
+            </p>
+          </div>
+          <button
+            className="generateTrip"
+            type="button"
+            onClick={() => navigate("planner")}
+          >
+            Create a trip <span aria-hidden="true">→</span>
+          </button>
+        </main>
+      </TripPilotShell>
+    );
+  }
+
   return (
     <TripPilotShell controller={controller}>
       <section className="dashboard">
@@ -260,19 +284,35 @@ export default function TripsPage() {
                     <i>adults</i>
                   </b>
                   <small>
-                    👨‍🦱👩‍🦰 You, friends
+                    {form.travelType === "Family" ||
+                    /\bfamily\b/i.test(preferences)
+                      ? "👨‍👩‍👧‍👦 You, family"
+                      : "👨‍🦱👩‍🦰 You, friends"}
                   </small>
                 </article>
                 <article>
-                  <span>Destination</span>
+                  <span>Trip route</span>
                   <button>⋮</button>
                   <b>
                     {form.destination}
                   </b>
                   <small>
-                    🇮🇳 India <i>→</i>{" "}
-                    {form.transport}
+                    From {form.from} ·{" "}
+                    {form.travelType} · {form.transport}
                   </small>
+                </article>
+                <article>
+                  <span>Budget</span>
+                  <button>⋮</button>
+                  <b>
+                    {Number(form.budget) > 0
+                      ? showTripCurrency(
+                          Number(form.budget),
+                          startingCurrency,
+                        )
+                      : "Set budget"}
+                  </b>
+                  <small>Planned trip budget</small>
                 </article>
               </div>
               <div className="bottomRow tasksOnly">
@@ -631,9 +671,6 @@ export default function TripsPage() {
                           );
                           navigate(
                             "attractions",
-                          );
-                          void loadAttractions(
-                            form.destination,
                           );
                           window.scrollTo(
                             {

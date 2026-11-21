@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "./context/AuthContext";
+import { JourneyProvider } from "./context/JourneyContext";
 
 export const metadata: Metadata = {
   title: "TripPilot",
@@ -16,7 +17,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <JourneyProvider>{children}</JourneyProvider>
+        </AuthProvider>
       </body>
     </html>
   );

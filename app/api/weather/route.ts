@@ -24,6 +24,8 @@ const WEATHER_ICONS: Record<number, string> = {
   99: "⛈️"
 };
 
+const WEATHER_REQUEST_TIMEOUT_MS = 8000;
+
 export async function GET(request: NextRequest) {
   const location = request.nextUrl.searchParams.get("location")?.trim();
 
@@ -40,7 +42,10 @@ export async function GET(request: NextRequest) {
     });
     const geoResponse = await fetch(
       `https://geocoding-api.open-meteo.com/v1/search?${geoParams}`,
-      { cache: "no-store" }
+      {
+        cache: "no-store",
+        signal: AbortSignal.timeout(WEATHER_REQUEST_TIMEOUT_MS),
+      }
     );
 
     if (!geoResponse.ok) throw new Error("Location search failed.");
@@ -65,7 +70,10 @@ export async function GET(request: NextRequest) {
     });
     const forecastResponse = await fetch(
       `https://api.open-meteo.com/v1/forecast?${forecastParams}`,
-      { cache: "no-store" }
+      {
+        cache: "no-store",
+        signal: AbortSignal.timeout(WEATHER_REQUEST_TIMEOUT_MS),
+      }
     );
 
     if (!forecastResponse.ok) throw new Error("Weather forecast failed.");
