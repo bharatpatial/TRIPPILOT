@@ -24,7 +24,7 @@ const WEATHER_ICONS: Record<number, string> = {
   99: "⛈️"
 };
 
-const WEATHER_REQUEST_TIMEOUT_MS = 8000;
+const WEATHER_REQUEST_TIMEOUT_MS = 15000;
 
 export async function GET(request: NextRequest) {
   const location = request.nextUrl.searchParams.get("location")?.trim();
@@ -100,9 +100,15 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Sidebar weather error:", error);
+    const timedOut =
+      error instanceof Error && error.name === "TimeoutError";
     return NextResponse.json(
-      { error: "Live weather is temporarily unavailable." },
-      { status: 502 }
+      {
+        error: timedOut
+          ? "Weather provider timed out. Please try again."
+          : "Live weather is temporarily unavailable.",
+      },
+      { status: timedOut ? 504 : 502 }
     );
   }
 }

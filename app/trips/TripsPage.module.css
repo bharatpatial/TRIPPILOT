@@ -1,3 +1,17 @@
+.priceNotice {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--white);
+  color: var(--blue);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
 .itinerarySection {
   margin-top: 0px;
 }

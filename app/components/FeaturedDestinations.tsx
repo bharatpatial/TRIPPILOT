@@ -11,7 +11,6 @@ export type FeaturedTripPreset = {
 };
 
 type Props = {
-  onSelect: (destination: string) => void;
   onPlan: (destination: FeaturedTripPreset) => void;
 };
 
@@ -61,11 +60,15 @@ const destinations: FeaturedTripPreset[] = [
 ];
 
 export default function FeaturedDestinations({
-  onSelect,
   onPlan,
 }: Props) {
   const [selectedTrip, setSelectedTrip] =
     useState<FeaturedTripPreset | null>(null);
+
+  function useTrip(destination: FeaturedTripPreset) {
+    setSelectedTrip(destination);
+    onPlan(destination);
+  }
 
   return (
     <div className="plannerMain">
@@ -88,21 +91,18 @@ export default function FeaturedDestinations({
             <button
               type="button"
               className={`destinationPhoto ${destination.className}`}
-              onClick={() => onSelect(destination.name)}
-              aria-label={`Ask Zoya to show attractions in ${destination.name}`}
+              onClick={() => useTrip(destination)}
+              aria-label={`Use ${destination.name} as your trip destination`}
             >
               <span>
                 {destination.name}
-                <small>Explore attractions →</small>
+                <small>Use this destination →</small>
               </span>
             </button>
             <button
               type="button"
               className="destinationPlanAction"
-              onClick={() => {
-                setSelectedTrip(destination);
-                onPlan(destination);
-              }}
+              onClick={() => useTrip(destination)}
               aria-label={`Use the ${destination.name} trip idea`}
             >
               Use this trip
@@ -119,8 +119,8 @@ export default function FeaturedDestinations({
               {selectedTrip.travelType}
             </strong>
             <p>
-              {selectedTrip.description}. Add your starting point and dates
-              in the planner to continue.
+              {selectedTrip.description}. The destination, trip length and
+              travel style are filled in the planner.
             </p>
           </div>
           <span>Trip idea selected ✓</span>

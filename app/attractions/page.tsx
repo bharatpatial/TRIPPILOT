@@ -63,6 +63,7 @@ export default function AttractionsPage() {
     setAttractionLoading,
     liveAttractions,
     setLiveAttractions,
+    attractionResultsLocation,
     attractionError,
     setAttractionError,
     aiError,
@@ -151,11 +152,17 @@ export default function AttractionsPage() {
 
   useEffect(() => {
     if (!sessionReady || initialAttractionLoad.current) return;
-    initialAttractionLoad.current = true;
 
     const location = attractionSearch.trim();
-    if (location) void loadAttractions(location);
-  }, [sessionReady, attractionSearch, loadAttractions]);
+    if (!location) return;
+
+    initialAttractionLoad.current = true;
+    const hasResultsForLocation =
+      liveAttractions.length > 0 &&
+      attractionResultsLocation.trim().toLowerCase() ===
+        location.toLowerCase();
+    if (!hasResultsForLocation) void loadAttractions(location);
+  });
 
   return (
     <TripPilotShell controller={controller}>

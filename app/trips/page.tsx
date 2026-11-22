@@ -85,8 +85,7 @@ export default function TripsPage() {
     setGeneratedDays,
     messages,
     setMessages,
-    form,
-    setForm,
+    activeTripForm: tripForm,
     weatherLocation,
     setWeatherLocation,
     weatherData,
@@ -103,7 +102,7 @@ export default function TripsPage() {
     saveTripSession,
     navigate,
     toggleTheme,
-    startingCurrency,
+    activeStartingCurrency,
     destinationCurrency,
     destinationBudget,
     current,
@@ -178,12 +177,16 @@ export default function TripsPage() {
     <TripPilotShell controller={controller}>
       <section className="dashboard">
             <div className="dashboardMain">
+              <p className={styles.priceNotice} role="note">
+                Prices for transportation, accommodation, and other travel
+                costs may vary depending on the season and availability.
+              </p>
               <div className="heroRow">
                 <article
-                  key={`${form.destination}-${form.start}-${form.end}`}
+                  key={`${tripForm.destination}-${tripForm.start}-${tripForm.end}`}
                   className="destinationHero scenicHero"
                   role="img"
-                  aria-label={`${tripScene.type} scenery for ${form.destination}`}
+                  aria-label={`${tripScene.type} scenery for ${tripForm.destination}`}
                   style={{
                     backgroundImage: `linear-gradient(90deg,rgba(8,18,38,.82) 0%,rgba(8,18,38,.55) 48%,rgba(8,18,38,.12) 100%),url("${tripSceneImage}")`,
                   }}
@@ -193,11 +196,11 @@ export default function TripsPage() {
                       Nearest trip
                     </span>
                     <h1>
-                      {form.destination}
+                      {tripForm.destination}
                     </h1>
                     <p>
                       {new Date(
-                        form.start +
+                        tripForm.start +
                           "T12:00:00",
                       ).toLocaleDateString(
                         "en-IN",
@@ -208,7 +211,7 @@ export default function TripsPage() {
                       )}
                       –
                       {new Date(
-                        form.end +
+                        tripForm.end +
                           "T12:00:00",
                       ).toLocaleDateString(
                         "en-IN",
@@ -272,19 +275,19 @@ export default function TripsPage() {
                   <button>⋮</button>
                   <b>{tripDuration} days</b>
                   <small>
-                    {new Date(`${form.start}T12:00:00`).toLocaleDateString("en-IN")} <i>⇄</i>{" "}
-                    {new Date(`${form.end}T12:00:00`).toLocaleDateString("en-IN")}
+                    {new Date(`${tripForm.start}T12:00:00`).toLocaleDateString("en-IN")} <i>⇄</i>{" "}
+                    {new Date(`${tripForm.end}T12:00:00`).toLocaleDateString("en-IN")}
                   </small>
                 </article>
                 <article>
                   <span>People</span>
                   <button>⋮</button>
                   <b>
-                    {form.travellers}{" "}
+                    {tripForm.travellers}{" "}
                     <i>adults</i>
                   </b>
                   <small>
-                    {form.travelType === "Family" ||
+                    {tripForm.travelType === "Family" ||
                     /\bfamily\b/i.test(preferences)
                       ? "👨‍👩‍👧‍👦 You, family"
                       : "👨‍🦱👩‍🦰 You, friends"}
@@ -294,21 +297,21 @@ export default function TripsPage() {
                   <span>Trip route</span>
                   <button>⋮</button>
                   <b>
-                    {form.destination}
+                    {tripForm.destination}
                   </b>
                   <small>
-                    From {form.from} ·{" "}
-                    {form.travelType} · {form.transport}
+                    From {tripForm.from} ·{" "}
+                    {tripForm.travelType} · {tripForm.transport}
                   </small>
                 </article>
                 <article>
                   <span>Budget</span>
                   <button>⋮</button>
                   <b>
-                    {Number(form.budget) > 0
+                    {Number(tripForm.budget) > 0
                       ? showTripCurrency(
-                          Number(form.budget),
-                          startingCurrency,
+                          Number(tripForm.budget),
+                          activeStartingCurrency,
                         )
                       : "Set budget"}
                   </b>
@@ -326,7 +329,7 @@ export default function TripsPage() {
                           INTELLIGENCE
                         </span>
                         <h2>
-                          Tips for {form.destination}
+                          Tips for {tripForm.destination}
                         </h2>
                       </div>
                     </div>
@@ -470,7 +473,7 @@ export default function TripsPage() {
                   <article className={`mapPanel itinerarySideMap ${styles.mapPanel}`}>
                     <iframe
                       key={`${activeDay}-${current.place}`}
-                      title={`Itinerary map highlighting ${current.place} in ${form.destination}`}
+                      title={`Itinerary map highlighting ${current.place} in ${tripForm.destination}`}
                       src={mapEmbedUrl}
                       loading="lazy"
                     />
@@ -534,21 +537,21 @@ export default function TripsPage() {
                       </div>
                       <div>
                         <span>
-                          {form.transport.toUpperCase()}{" "}
+                          {tripForm.transport.toUpperCase()}{" "}
                           ·{" "}
                           {
                             transportBooking.provider
                           }
                         </span>
                         <h3>
-                          {form.from} →{" "}
+                          {tripForm.from} →{" "}
                           {
-                            form.destination
+                            tripForm.destination
                           }
                         </h3>
                         <p>
                           {new Date(
-                            form.start +
+                            tripForm.start +
                               "T12:00:00",
                           ).toLocaleDateString(
                             "en-IN",
@@ -561,7 +564,7 @@ export default function TripsPage() {
                           )}{" "}
                           ·{" "}
                           {
-                            form.travellers
+                            tripForm.travellers
                           }{" "}
                           travellers
                         </p>
@@ -592,12 +595,12 @@ export default function TripsPage() {
                         <h3>
                           Stays in{" "}
                           {
-                            form.destination
+                            tripForm.destination
                           }
                         </h3>
                         <p>
                           {new Date(
-                            form.start +
+                            tripForm.start +
                               "T12:00:00",
                           ).toLocaleDateString(
                             "en-IN",
@@ -609,7 +612,7 @@ export default function TripsPage() {
                           )}{" "}
                           –{" "}
                           {new Date(
-                            form.end +
+                            tripForm.end +
                               "T12:00:00",
                           ).toLocaleDateString(
                             "en-IN",
@@ -621,7 +624,7 @@ export default function TripsPage() {
                           )}{" "}
                           ·{" "}
                           {
-                            form.travellers
+                            tripForm.travellers
                           }{" "}
                           adults
                         </p>
@@ -650,7 +653,7 @@ export default function TripsPage() {
                         <h3>
                           Places around{" "}
                           {
-                            form.destination
+                            tripForm.destination
                           }
                         </h3>
                         <p>
@@ -664,10 +667,10 @@ export default function TripsPage() {
                         className="bookingAction attractionAction"
                         onClick={() => {
                           setAttractionQuery(
-                            form.destination,
+                            tripForm.destination,
                           );
                           setAttractionSearch(
-                            form.destination,
+                            tripForm.destination,
                           );
                           navigate(
                             "attractions",
@@ -707,8 +710,8 @@ export default function TripsPage() {
                     );
                   }
                 }
-                startDate={form.start}
-                endDate={form.end}
+                startDate={tripForm.start}
+                endDate={tripForm.end}
               />
               {tripEstimatedTotal > 0 && (
                 <article className="timelineBudgetPanel">
@@ -724,7 +727,7 @@ export default function TripsPage() {
                     <strong>
                       {showTripCurrency(
                         tripEstimatedTotal,
-                        startingCurrency,
+                        activeStartingCurrency,
                       )}
                     </strong>
                   </div>
@@ -743,7 +746,7 @@ export default function TripsPage() {
                             <b>
                               {showTripCurrency(
                                 item.amount,
-                                startingCurrency,
+                                activeStartingCurrency,
                               )}
                             </b>
                             <em>
@@ -760,8 +763,8 @@ export default function TripsPage() {
                   </div>
                   <p>
                     Estimated for all{" "}
-                    {form.travellers} travellers in{" "}
-                    {startingCurrency.code}. Confirm
+                    {tripForm.travellers} travellers in{" "}
+                    {activeStartingCurrency.code}. Confirm
                     live prices before booking.
                   </p>
                 </article>

@@ -39,11 +39,27 @@ function HomePlanner() {
 
   const planFeaturedTrip = useCallback(
     (destination: FeaturedTripPreset) => {
+      const selectedStart = new Date(
+        `${controller.form.start}T12:00:00`,
+      );
+      const departureDate = Number.isNaN(selectedStart.getTime())
+        ? new Date()
+        : selectedStart;
+      const returnDate = new Date(departureDate);
+      returnDate.setDate(returnDate.getDate() + destination.days - 1);
+      const returnDateValue = [
+        returnDate.getFullYear(),
+        String(returnDate.getMonth() + 1).padStart(2, "0"),
+        String(returnDate.getDate()).padStart(2, "0"),
+      ].join("-");
+
       controller.setForm({
         ...controller.form,
         destination: destination.name,
+        end: returnDateValue,
         travelType: destination.travelType,
       });
+      controller.setPreferences(destination.description);
       document
         .getElementById("tripPlannerForm")
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -55,7 +71,6 @@ function HomePlanner() {
     <TripPilotShell controller={controller}>
       <section className="plannerScreen">
         <FeaturedDestinations
-          onSelect={controller.openFeaturedDestination}
           onPlan={planFeaturedTrip}
         />
         <TripPlannerForm controller={controller} />

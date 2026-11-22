@@ -420,8 +420,8 @@ function readItinerarySteps(
 const DEFAULT_TRIP_FORM = {
   from: "Ferozepur City",
   destination: "Manali",
-  start: "2026-09-12",
-  end: "2026-09-16",
+  start: "",
+  end: "",
   travellers: "2",
   budget: "30000",
   travelType: "Adventure",
@@ -434,6 +434,8 @@ const DEFAULT_TRIP_PREFERENCES =
 const LEGACY_DEFAULT_TRIP_FORM = {
   ...DEFAULT_TRIP_FORM,
   from: "Ferozepur",
+  start: "2026-09-12",
+  end: "2026-09-16",
   transport: "Train",
 };
 
@@ -1025,13 +1027,11 @@ function Weather({
   loading,
   location,
   error,
-  onRefresh,
 }: {
   data: WeatherData | null;
   loading: boolean;
   location: string;
   error: string;
-  onRefresh: () => void;
 }) {
   return (
     <div className="weatherCard">
@@ -1057,15 +1057,6 @@ function Weather({
                 : data?.location || location || "Add a destination"}
           </small>
         </div>
-        <button
-          type="button"
-          aria-label="Refresh destination weather"
-          title={error || "Refresh destination weather"}
-          disabled={loading || !location}
-          onClick={onRefresh}
-        >
-          ↻
-        </button>
       </div>
       {error && <small className="weatherError" role="status">{error}</small>}
       <div className="forecast">
@@ -1186,6 +1177,10 @@ export function useTripPilot(
     }>
   >([]);
   const [
+    attractionResultsLocation,
+    setAttractionResultsLocation,
+  ] = useState("");
+  const [
     attractionError,
     setAttractionError,
   ] = useState("");
@@ -1228,6 +1223,8 @@ export function useTripPilot(
     ]);
   const lastAnnouncedWarning = useRef("");
   const [form, setForm] = useState(DEFAULT_TRIP_FORM);
+  const [activeTripForm, setActiveTripForm] =
+    useState(DEFAULT_TRIP_FORM);
   const [
     weatherLocation,
     setWeatherLocation,
@@ -1271,9 +1268,11 @@ export function useTripPilot(
       JSON.stringify({
         screen: nextScreen,
         form,
+        activeTripForm,
         preferences,
         generatedDays,
         liveAttractions,
+        attractionResultsLocation,
         attractionSearch,
         assistantLanguage,
         messages,
@@ -1299,6 +1298,8 @@ export function useTripPilot(
   }
 
   useEffect(() => {
+    const today = toLocalIsoDate(new Date());
+
     try {
       const saved =
         window.sessionStorage.getItem(
@@ -1332,14 +1333,16 @@ export function useTripPilot(
               : DEFAULT_TRIP_FORM.destination,
           start:
             typeof savedForm.start === "string" &&
-            savedForm.start
+            savedForm.start &&
+            savedForm.start !== LEGACY_DEFAULT_TRIP_FORM.start
               ? savedForm.start
-              : DEFAULT_TRIP_FORM.start,
+              : today,
           end:
             typeof savedForm.end === "string" &&
-            savedForm.end
+            savedForm.end &&
+            savedForm.end !== LEGACY_DEFAULT_TRIP_FORM.end
               ? savedForm.end
-              : DEFAULT_TRIP_FORM.end,
+              : today,
           travellers:
             typeof savedForm.travellers === "string" &&
             savedForm.travellers
@@ -1363,6 +1366,67 @@ export function useTripPilot(
               : DEFAULT_TRIP_FORM.transport,
         };
         setForm(restoredForm);
+        const previousItineraryDestination =
+          typeof session.attractionSearch === "string" &&
+          session.attractionSearch.trim() &&
+          JSON.stringify(session.generatedDays || [])
+            .toLowerCase()
+            .includes(session.attractionSearch.trim().toLowerCase())
+            ? session.attractionSearch.trim()
+            : "";
+        const savedActiveTripForm =
+          session.activeTripForm &&
+          typeof session.activeTripForm === "object"
+            ? session.activeTripForm
+            : previousItineraryDestination &&
+                previousItineraryDestination !== restoredForm.destination
+              ? {
+                  ...restoredForm,
+                  destination: previousItineraryDestination,
+                }
+              : restoredForm;
+        setActiveTripForm({
+          from:
+            typeof savedActiveTripForm.from === "string" &&
+            savedActiveTripForm.from.trim()
+              ? savedActiveTripForm.from
+              : restoredForm.from,
+          destination:
+            typeof savedActiveTripForm.destination === "string" &&
+            savedActiveTripForm.destination.trim()
+              ? savedActiveTripForm.destination
+              : restoredForm.destination,
+          start:
+            typeof savedActiveTripForm.start === "string" &&
+            savedActiveTripForm.start
+              ? savedActiveTripForm.start
+              : restoredForm.start,
+          end:
+            typeof savedActiveTripForm.end === "string" &&
+            savedActiveTripForm.end
+              ? savedActiveTripForm.end
+              : restoredForm.end,
+          travellers:
+            typeof savedActiveTripForm.travellers === "string" &&
+            savedActiveTripForm.travellers
+              ? savedActiveTripForm.travellers
+              : restoredForm.travellers,
+          budget:
+            typeof savedActiveTripForm.budget === "string" &&
+            savedActiveTripForm.budget
+              ? savedActiveTripForm.budget
+              : restoredForm.budget,
+          travelType:
+            typeof savedActiveTripForm.travelType === "string" &&
+            savedActiveTripForm.travelType
+              ? savedActiveTripForm.travelType
+              : restoredForm.travelType,
+          transport:
+            typeof savedActiveTripForm.transport === "string" &&
+            savedActiveTripForm.transport
+              ? savedActiveTripForm.transport
+              : restoredForm.transport,
+        });
         setPreferences(
           typeof session.preferences === "string" &&
             session.preferences.trim() &&
@@ -1488,10 +1552,18 @@ export function useTripPilot(
 
           setGeneratedDays(repairedDays);
         } else setGeneratedDays(tripDays);
-        if (Array.isArray(session.liveAttractions))
+        if (Array.isArray(session.liveAttractions)) {
           setLiveAttractions(
             session.liveAttractions,
           );
+          setAttractionResultsLocation(
+            typeof session.attractionResultsLocation === "string"
+              ? session.attractionResultsLocation
+              : session.liveAttractions.length
+                ? String(session.attractionSearch || "")
+                : "",
+          );
+        }
         if (session.attractionSearch)
           setAttractionSearch(
             session.attractionSearch,
@@ -1539,7 +1611,14 @@ export function useTripPilot(
           setWeatherData(session.weatherData);
           setWeatherLoading(false);
         }
-
+      } else {
+        const defaultForm = {
+          ...DEFAULT_TRIP_FORM,
+          start: today,
+          end: today,
+        };
+        setForm(defaultForm);
+        setActiveTripForm(defaultForm);
       }
 
       const pendingFeaturedAttraction =
@@ -1561,6 +1640,13 @@ export function useTripPilot(
       window.sessionStorage.removeItem(
         "trippilot-session",
       );
+      const defaultForm = {
+        ...DEFAULT_TRIP_FORM,
+        start: today,
+        end: today,
+      };
+      setForm(defaultForm);
+      setActiveTripForm(defaultForm);
     } finally {
       setScreen(initialScreen);
       setSessionReady(true);
@@ -1575,9 +1661,11 @@ export function useTripPilot(
     sessionReady,
     screen,
     form,
+    activeTripForm,
     preferences,
     generatedDays,
     liveAttractions,
+    attractionResultsLocation,
     attractionSearch,
     assistantLanguage,
     messages,
@@ -1697,6 +1785,10 @@ const destinationCurrency = useMemo(
   ),
   [form.destination],
 );
+const activeStartingCurrency = useMemo(
+  () => findTripCurrency(activeTripForm.from),
+  [activeTripForm.from],
+);
 
   useEffect(() => {
     if (
@@ -1810,12 +1902,14 @@ const destinationCurrency = useMemo(
       return;
     }
 
+    const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      void loadWeather(destination);
+      void loadWeather(destination, controller.signal);
     }, 700);
 
     return () => {
       window.clearTimeout(timer);
+      controller.abort();
     };
   }, [form.destination, sessionReady]);
 
@@ -1934,7 +2028,7 @@ const destinationCurrency = useMemo(
               : [
                   `Best time for ${firstTitle}: begin around ${firstTime} so Day ${day.day} stays comfortably paced.`,
                   `Before ${secondTitle}, confirm its current opening, booking, access and weather conditions; live details can change.`,
-                  `While completing ${day.title} at ${day.place}, ${styleAdvice[form.travelType] || "keep a comfortable pace and allow extra local-travel time"}. Also prioritise “${specialRequest}”.`,
+                  `While completing ${day.title} at ${day.place}, ${styleAdvice[activeTripForm.travelType] || "keep a comfortable pace and allow extra local-travel time"}. Also prioritise “${specialRequest}”.`,
                 ];
 
         return {
@@ -1946,7 +2040,7 @@ const destinationCurrency = useMemo(
     },
     [
       generatedDays,
-      form.travelType,
+      activeTripForm.travelType,
       preferences,
       assistantLanguage,
     ],
@@ -1958,7 +2052,7 @@ const destinationCurrency = useMemo(
       Math.min(day, generatedDays.length),
     );
     const date = new Date(
-      `${form.start}T12:00:00`,
+      `${activeTripForm.start}T12:00:00`,
     );
 
     date.setDate(date.getDate() + safeDay - 1);
@@ -1968,10 +2062,10 @@ const destinationCurrency = useMemo(
 
   const tripDuration = useMemo(() => {
     const start = new Date(
-      `${form.start}T12:00:00`,
+      `${activeTripForm.start}T12:00:00`,
     );
     const end = new Date(
-      `${form.end}T12:00:00`,
+      `${activeTripForm.end}T12:00:00`,
     );
     return Math.max(
       1,
@@ -1979,6 +2073,14 @@ const destinationCurrency = useMemo(
         (end.getTime() - start.getTime()) /
           86400000,
       ) + 1,
+    );
+  }, [activeTripForm.start, activeTripForm.end]);
+  const draftTripDuration = useMemo(() => {
+    const start = new Date(`${form.start}T12:00:00`);
+    const end = new Date(`${form.end}T12:00:00`);
+    return Math.max(
+      1,
+      Math.round((end.getTime() - start.getTime()) / 86400000) + 1,
     );
   }, [form.start, form.end]);
   const expenses = useMemo(() => {
@@ -2095,8 +2197,8 @@ const destinationCurrency = useMemo(
   );
   const routePlaces = useMemo(
     () => {
-      const origin = form.from.trim().toLowerCase();
-      const destination = form.destination.trim().toLowerCase();
+      const origin = activeTripForm.from.trim().toLowerCase();
+      const destination = activeTripForm.destination.trim().toLowerCase();
 
       return generatedDays.map((day) => {
         const place = day.place.trim();
@@ -2109,10 +2211,10 @@ const destinationCurrency = useMemo(
           return place;
         }
 
-        return `${place}, ${form.destination}`;
+        return `${place}, ${activeTripForm.destination}`;
       });
     },
-    [form.from, form.destination, generatedDays],
+    [activeTripForm.from, activeTripForm.destination, generatedDays],
   );
   const routeMapUrl = useMemo(() => {
     const params = new URLSearchParams({
@@ -2131,7 +2233,7 @@ const destinationCurrency = useMemo(
   }, [routePlaces]);
   const mapEmbedUrl = useMemo(() => {
     const selectedPlace =
-      generatedDays[activeDay - 1]?.place || form.destination;
+      generatedDays[activeDay - 1]?.place || activeTripForm.destination;
     const selectedKey = selectedPlace
       .toLowerCase()
       .replace(/[^a-z0-9]/g, "");
@@ -2145,21 +2247,21 @@ const destinationCurrency = useMemo(
       Number.isFinite(Number(matchedAttraction?.lon));
     const query = hasCoordinates
       ? `${selectedPlace} @${matchedAttraction?.lat},${matchedAttraction?.lon}`
-      : routePlaces[activeDay - 1] || form.destination;
+      : routePlaces[activeDay - 1] || activeTripForm.destination;
 
     return `https://maps.google.com/maps?q=${encodeURIComponent(query)}&z=15&output=embed`;
   }, [
     activeDay,
-    form.destination,
+    activeTripForm.destination,
     generatedDays,
     liveAttractions,
     routePlaces,
   ]);
   const bookingOrigin =
     generatedDays[0]?.bookingOrigin ||
-    form.from;
+    activeTripForm.from;
   const normalizedBookingDestination =
-    form.destination
+    activeTripForm.destination
       .trim()
       .toLowerCase();
   const knownRailHub: Record<
@@ -2176,30 +2278,30 @@ const destinationCurrency = useMemo(
     coorg: "Mysuru Junction",
   };
   const fallbackBookingDestination =
-    form.transport === "Train"
+    activeTripForm.transport === "Train"
       ? knownRailHub[
           normalizedBookingDestination
-        ] || form.destination
-      : form.destination;
+        ] || activeTripForm.destination
+      : activeTripForm.destination;
   const bookingDestination =
     generatedDays[0]?.bookingDestination ||
     fallbackBookingDestination;
   const onwardTransfer =
     generatedDays[0]?.onwardTransfer ||
-    (bookingDestination !== form.destination
-      ? `${bookingDestination} to ${form.destination} by a practical onward bus or taxi connection.`
+    (bookingDestination !== activeTripForm.destination
+      ? `${bookingDestination} to ${activeTripForm.destination} by a practical onward bus or taxi connection.`
       : "");
   const hotelBookingUrl = useMemo(() => {
     const params = new URLSearchParams({
-      ss: form.destination,
-      checkin: form.start,
-      checkout: form.end,
-      group_adults: form.travellers,
+      ss: activeTripForm.destination,
+      checkin: activeTripForm.start,
+      checkout: activeTripForm.end,
+      group_adults: activeTripForm.travellers,
       group_children: "0",
       no_rooms: "1",
     });
     return `https://www.booking.com/searchresults.html?${params.toString()}`;
-  }, [form]);
+  }, [activeTripForm]);
   const roomBookingUrl = useMemo(() => {
     const params = new URLSearchParams({
       ss:
@@ -2214,62 +2316,62 @@ const destinationCurrency = useMemo(
   }, [roomLocation, form]);
   const bookingFlightUrl = useMemo(
     () =>
-      `https://www.booking.com/flights/?${new URLSearchParams({ type: "ONEWAY", cabinClass: "ECONOMY", children: "0", adults: form.travellers, from: bookingOrigin, to: bookingDestination, depart: form.start }).toString()}`,
+      `https://www.booking.com/flights/?${new URLSearchParams({ type: "ONEWAY", cabinClass: "ECONOMY", children: "0", adults: activeTripForm.travellers, from: bookingOrigin, to: bookingDestination, depart: activeTripForm.start }).toString()}`,
     [
       bookingOrigin,
       bookingDestination,
-      form.travellers,
-      form.start,
+      activeTripForm.travellers,
+      activeTripForm.start,
     ],
   );
   const returnFlightUrl = useMemo(
     () =>
-      `https://www.booking.com/flights/?${new URLSearchParams({ type: "ONEWAY", cabinClass: "ECONOMY", children: "0", adults: form.travellers, from: bookingDestination, to: bookingOrigin, depart: form.end }).toString()}`,
+      `https://www.booking.com/flights/?${new URLSearchParams({ type: "ONEWAY", cabinClass: "ECONOMY", children: "0", adults: activeTripForm.travellers, from: bookingDestination, to: bookingOrigin, depart: activeTripForm.end }).toString()}`,
     [
       bookingOrigin,
       bookingDestination,
-      form.travellers,
-      form.end,
+      activeTripForm.travellers,
+      activeTripForm.end,
     ],
   );
   const uberRideUrl = useMemo(() => {
     const params = new URLSearchParams({
       action: "setPickup",
       "pickup[formatted_address]":
-        form.from,
-      "pickup[nickname]": form.from,
+        activeTripForm.from,
+      "pickup[nickname]": activeTripForm.from,
       "dropoff[formatted_address]":
-        form.destination,
+        activeTripForm.destination,
       "dropoff[nickname]":
-        form.destination,
+        activeTripForm.destination,
     });
     return `https://m.uber.com/ul/?${params.toString()}`;
-  }, [form.from, form.destination]);
+  }, [activeTripForm.from, activeTripForm.destination]);
   const returnUberRideUrl = useMemo(() => {
     const params = new URLSearchParams({
       action: "setPickup",
       "pickup[formatted_address]":
-        form.destination,
-      "pickup[nickname]": form.destination,
+        activeTripForm.destination,
+      "pickup[nickname]": activeTripForm.destination,
       "dropoff[formatted_address]":
-        form.from,
-      "dropoff[nickname]": form.from,
+        activeTripForm.from,
+      "dropoff[nickname]": activeTripForm.from,
     });
     return `https://m.uber.com/ul/?${params.toString()}`;
-  }, [form.from, form.destination]);
+  }, [activeTripForm.from, activeTripForm.destination]);
   const rapidoRideUrl = useMemo(
     () =>
-      `https://www.rapido.bike/?${new URLSearchParams({ pickup: form.from, drop: form.destination, date: form.start }).toString()}`,
+      `https://www.rapido.bike/?${new URLSearchParams({ pickup: activeTripForm.from, drop: activeTripForm.destination, date: activeTripForm.start }).toString()}`,
     [
-      form.from,
-      form.destination,
-      form.start,
+      activeTripForm.from,
+      activeTripForm.destination,
+      activeTripForm.start,
     ],
   );
   const returnRapidoRideUrl = useMemo(
     () =>
-      `https://www.rapido.bike/?${new URLSearchParams({ pickup: form.destination, drop: form.from, date: form.end }).toString()}`,
-    [form.from, form.destination, form.end],
+      `https://www.rapido.bike/?${new URLSearchParams({ pickup: activeTripForm.destination, drop: activeTripForm.from, date: activeTripForm.end }).toString()}`,
+    [activeTripForm.from, activeTripForm.destination, activeTripForm.end],
   );
   const googleAttractionsUrl = useMemo(
     () =>
@@ -2283,11 +2385,11 @@ const destinationCurrency = useMemo(
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-|-$/g, "");
-    return `https://www.redbus.in/bus-tickets/${slug(bookingOrigin)}-to-${slug(bookingDestination)}?onward=${encodeURIComponent(form.start)}`;
+    return `https://www.redbus.in/bus-tickets/${slug(bookingOrigin)}-to-${slug(bookingDestination)}?onward=${encodeURIComponent(activeTripForm.start)}`;
   }, [
     bookingOrigin,
     bookingDestination,
-    form.start,
+    activeTripForm.start,
   ]);
   const returnBusBookingUrl = useMemo(() => {
     const slug = (value: string) =>
@@ -2296,45 +2398,45 @@ const destinationCurrency = useMemo(
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-|-$/g, "");
-    return `https://www.redbus.in/bus-tickets/${slug(bookingDestination)}-to-${slug(bookingOrigin)}?onward=${encodeURIComponent(form.end)}`;
-  }, [bookingOrigin, bookingDestination, form.end]);
+    return `https://www.redbus.in/bus-tickets/${slug(bookingDestination)}-to-${slug(bookingOrigin)}?onward=${encodeURIComponent(activeTripForm.end)}`;
+  }, [bookingOrigin, bookingDestination, activeTripForm.end]);
   const redRailUrl = useMemo(
     () =>
-      `https://www.redbus.in/railways?${new URLSearchParams({ src: bookingOrigin, dst: bookingDestination, doj: form.start }).toString()}`,
+      `https://www.redbus.in/railways?${new URLSearchParams({ src: bookingOrigin, dst: bookingDestination, doj: activeTripForm.start }).toString()}`,
     [
       bookingOrigin,
       bookingDestination,
-      form.start,
+      activeTripForm.start,
     ],
   );
   const returnRedRailUrl = useMemo(
     () =>
-      `https://www.redbus.in/railways?${new URLSearchParams({ src: bookingDestination, dst: bookingOrigin, doj: form.end }).toString()}`,
-    [bookingOrigin, bookingDestination, form.end],
+      `https://www.redbus.in/railways?${new URLSearchParams({ src: bookingDestination, dst: bookingOrigin, doj: activeTripForm.end }).toString()}`,
+    [bookingOrigin, bookingDestination, activeTripForm.end],
   );
   const transportBooking = useMemo(() => {
-    if (form.transport === "Train")
+    if (activeTripForm.transport === "Train")
       return {
         icon: "🚆",
         provider: "redRail by redBus",
         url: redRailUrl,
         label: "Search trains",
       };
-    if (form.transport === "Bus")
+    if (activeTripForm.transport === "Bus")
       return {
         icon: "🚌",
         provider: "redBus",
         url: busBookingUrl,
         label: "Book bus tickets",
       };
-    if (form.transport === "Flight")
+    if (activeTripForm.transport === "Flight")
       return {
         icon: "✈️",
         provider: "Booking.com",
         url: bookingFlightUrl,
         label: "Book on Booking.com",
       };
-    if (form.transport === "Car")
+    if (activeTripForm.transport === "Car")
       return {
         icon: "🚘",
         provider: "Uber",
@@ -2348,7 +2450,7 @@ const destinationCurrency = useMemo(
       label: "Book an Uber taxi",
     };
   }, [
-    form.transport,
+    activeTripForm.transport,
     redRailUrl,
     busBookingUrl,
     bookingFlightUrl,
@@ -2415,14 +2517,14 @@ const destinationCurrency = useMemo(
   const tripScene = useMemo(
     () =>
       destinationScene(
-        form.destination,
+        activeTripForm.destination,
         liveAttractions,
-        form.travelType,
+        activeTripForm.travelType,
       ),
     [
-      form.destination,
+      activeTripForm.destination,
       liveAttractions,
-      form.travelType,
+      activeTripForm.travelType,
     ],
   );
   const tripSceneImage = useMemo(
@@ -2489,6 +2591,7 @@ const destinationCurrency = useMemo(
   }
   async function loadWeather(
     location: string,
+    abortSignal?: AbortSignal,
   ) {
     const cleanLocation = location.trim();
     if (!cleanLocation) return;
@@ -2524,7 +2627,12 @@ const destinationCurrency = useMemo(
         `${API_BASE}/api/weather?location=${encodeURIComponent(cleanLocation)}`,
         {
           cache: "no-store",
-          signal: AbortSignal.timeout(20000),
+          signal: abortSignal
+            ? AbortSignal.any([
+                abortSignal,
+                AbortSignal.timeout(35000),
+              ])
+            : AbortSignal.timeout(35000),
         },
       );
       const data = await response.json();
@@ -2545,6 +2653,7 @@ const destinationCurrency = useMemo(
         }),
       );
     } catch (error) {
+      if (abortSignal?.aborted) return;
       setWeatherData(null);
       const message =
         error instanceof Error && error.name === "TimeoutError"
@@ -2555,7 +2664,7 @@ const destinationCurrency = useMemo(
       setWeatherError(message);
       console.error("Could not load sidebar weather:", error);
     } finally {
-      setWeatherLoading(false);
+      if (!abortSignal?.aborted) setWeatherLoading(false);
     }
   }
   async function planTrip(e: FormEvent) {
@@ -2713,7 +2822,7 @@ const destinationCurrency = useMemo(
         .map((place: any) => String(place.title).trim());
       const verifiedPlaceNames = touristPlaceNames;
 
-      if (verifiedPlaceNames.length < Math.max(0, tripDuration - 1)) {
+      if (verifiedPlaceNames.length < Math.max(0, draftTripDuration - 1)) {
         throw new Error(
           `Only ${verifiedPlaceNames.length} unique verified tourist attractions were found in ${form.destination}. Try a shorter trip or a more specific destination.`,
         );
@@ -2767,7 +2876,7 @@ const destinationCurrency = useMemo(
               .slice(0, 6)
               .map((name: string) => ({ name })),
             requirements:
-              `Write every user-facing title, summary, tip and timeline event in ${assistantLanguage}. Use only that language throughout the itinerary. Create exactly ${tripDuration} day objects, one for every travel date, maximum 15 days. Use only verifiedPlaces. The selected travel style is ${form.travelType}; make the pace, activities, food and experiences clearly match this style. The user's special request is: "${preferences.trim() || "No additional request"}". Treat this as an important instruction and include it throughout the itinerary whenever realistic and safe. Treat ${form.transport} as the preferred primary transport, not the only allowed transport. Use it for the largest practical part of the route. If it cannot directly reach ${form.destination}, connect through the nearest practical airport, railway station, bus terminal or port and add any required flight, train, bus, ferry, taxi or local transfer. Never reject the trip merely because one transport cannot complete every segment. On Day 1 include bookingOrigin, bookingDestination and onwardTransfer. bookingOrigin must be the practical station, airport or terminal serving ${form.from}. bookingDestination must be the real bookable major station, airport or terminal reached by ${form.transport}. If ${form.destination} has no direct ${form.transport} access, never use the final city as bookingDestination; use the best-known practical nearby hub and explain the remaining connection to ${form.destination} in onwardTransfer and the Day 1 summary. Never invent a station or airport. Clearly explain connections without inventing schedules or service numbers. Every day must include day, time, place, title, summary, tips, timeline, estimatedCost and expenses.Every summary must contain exactly 8 to 10 numbered itinerary steps. Put every step on a separate line using \n. Include morning, afternoon and evening activities, meals, transfers, rest time and practical instructions. Never return the complete day as one short paragraph.Every summary must contain exactly 8 to 10 numbered itinerary steps. Put every step on a separate line using \n. Include morning, afternoon and evening activities, meals, transfers, rest time and practical instructions. Never return the complete day as one short paragraph. tips must be an array of exactly 3 short tips tied to that day's actual activities: the best time for a named activity, specific booking or access advice, and relevant weather, clothing, food or local-transport advice. Every tip must mention an activity or situation unique to its day. Never reuse the same tip template on another day, and changing only the place name does not make a tip unique. timeline must contain 2 to 4 events with time, title and category. category must be travel, stay, activity or food. expenses must contain realistic estimated amounts labelled Travel, Hotel, Local fares, Food, Activities and Other when applicable. estimatedCost must equal the total of that day's expenses for all ${form.travellers} travellers together.Calculate costs for all travellers together. Transport must include the outward and return journeys. Hotel must cover every night and use one room for every two travellers. Food, activities and local fares must be multiplied by the number of travellers and trip days where applicable. Add a 10 percent safety buffer under Other. Never lower costs merely to fit the entered budget. All costs must use ${startingCurrency.code}, the starting-location currency. Do not force estimates to fit the user's budget; return reasonable estimates so TripPilot can warn when the budget is too low.`,
+              `Write every user-facing title, summary, tip and timeline event in ${assistantLanguage}. Use only that language throughout the itinerary. Create exactly ${draftTripDuration} day objects, one for every travel date, maximum 15 days. Use only verifiedPlaces. The selected travel style is ${form.travelType}; make the pace, activities, food and experiences clearly match this style. The user's special request is: "${preferences.trim() || "No additional request"}". Treat this as an important instruction and include it throughout the itinerary whenever realistic and safe. Treat ${form.transport} as the preferred primary transport, not the only allowed transport. Use it for the largest practical part of the route. If it cannot directly reach ${form.destination}, connect through the nearest practical airport, railway station, bus terminal or port and add any required flight, train, bus, ferry, taxi or local transfer. Never reject the trip merely because one transport cannot complete every segment. On Day 1 include bookingOrigin, bookingDestination and onwardTransfer. bookingOrigin must be the practical station, airport or terminal serving ${form.from}. bookingDestination must be the real bookable major station, airport or terminal reached by ${form.transport}. If ${form.destination} has no direct ${form.transport} access, never use the final city as bookingDestination; use the best-known practical nearby hub and explain the remaining connection to ${form.destination} in onwardTransfer and the Day 1 summary. Never invent a station or airport. Clearly explain connections without inventing schedules or service numbers. Every day must include day, time, place, title, summary, tips, timeline, estimatedCost and expenses.Every summary must contain exactly 8 to 10 numbered itinerary steps. Put every step on a separate line using \n. Include morning, afternoon and evening activities, meals, transfers, rest time and practical instructions. Never return the complete day as one short paragraph.Every summary must contain exactly 8 to 10 numbered itinerary steps. Put every step on a separate line using \n. Include morning, afternoon and evening activities, meals, transfers, rest time and practical instructions. Never return the complete day as one short paragraph. tips must be an array of exactly 3 short tips tied to that day's actual activities: the best time for a named activity, specific booking or access advice, and relevant weather, clothing, food or local-transport advice. Every tip must mention an activity or situation unique to its day. Never reuse the same tip template on another day, and changing only the place name does not make a tip unique. timeline must contain 2 to 4 events with time, title and category. category must be travel, stay, activity or food. expenses must contain realistic estimated amounts labelled Travel, Hotel, Local fares, Food, Activities and Other when applicable. estimatedCost must equal the total of that day's expenses for all ${form.travellers} travellers together.Calculate costs for all travellers together. Transport must include the outward and return journeys. Hotel must cover every night and use one room for every two travellers. Food, activities and local fares must be multiplied by the number of travellers and trip days where applicable. Add a 10 percent safety buffer under Other. Never lower costs merely to fit the entered budget. All costs must use ${startingCurrency.code}, the starting-location currency. Do not force estimates to fit the user's budget; return reasonable estimates so TripPilot can warn when the budget is too low.`,
             detailRequirements:
               "Every day summary must contain exactly 10 numbered steps on 10 separate lines. Include approximate journey duration, expected transfer time, morning/afternoon/evening activities, meal timing, rest time and a live-schedule confirmation reminder. Label durations as approximate and never invent a train number, flight number or guaranteed departure time.",
           }),
@@ -2785,7 +2894,7 @@ const destinationCurrency = useMemo(
         Array.from(
           {
             length: Math.min(
-              tripDuration,
+              draftTripDuration,
               15,
             ),
           },
@@ -3009,7 +3118,7 @@ const destinationCurrency = useMemo(
               title:
                 index === 0
                   ? `${form.from} to ${form.destination} – Arrival and first exploration`
-                  : index === Math.min(tripDuration, 15) - 1
+                  : index === Math.min(draftTripDuration, 15) - 1
                     ? `Final exploration at ${dayPlace}`
                     : `Explore ${dayPlace}`,
               place: String(
@@ -3150,10 +3259,12 @@ const destinationCurrency = useMemo(
         };
       });
 
+      setActiveTripForm({ ...form });
       setGeneratedDays(normalizedDays);
       setLiveAttractions(
         placesData.places,
       );
+      setAttractionResultsLocation(form.destination.trim());
       setAttractionSearch(
         form.destination,
       );
@@ -3222,6 +3333,7 @@ const destinationCurrency = useMemo(
     setAttractionSearch(location);
     setAttractionLoading(true);
     setAttractionError("");
+    setAttractionResultsLocation("");
     setLiveAttractions([]);
     try {
       const response = await fetch(
@@ -3242,6 +3354,7 @@ const destinationCurrency = useMemo(
           Number(Boolean(a.image)),
       );
       setLiveAttractions(imageFirst);
+      setAttractionResultsLocation(location.trim());
     } catch (error: any) {
       setAttractionError(
         error.message ||
@@ -4517,6 +4630,8 @@ const destinationCurrency = useMemo(
     setAttractionLoading,
     liveAttractions,
     setLiveAttractions,
+    attractionResultsLocation,
+    setAttractionResultsLocation,
     attractionError,
     setAttractionError,
     aiError,
@@ -4539,6 +4654,7 @@ const destinationCurrency = useMemo(
     setMessages,
     form,
     setForm,
+    activeTripForm,
     weatherLocation,
     setWeatherLocation,
     weatherData,
@@ -4557,6 +4673,7 @@ const destinationCurrency = useMemo(
     navigate,
     toggleTheme,
     startingCurrency,
+    activeStartingCurrency,
     destinationCurrency,
     destinationBudget,
     current,
@@ -4866,9 +4983,6 @@ export function TripPilotShell({
             loading={weatherLoading}
             location={weatherLocation}
             error={weatherError}
-            onRefresh={() =>
-              void loadWeather(weatherLocation || form.destination)
-            }
           />
           <button className="support">
             <span>◉</span> Support
