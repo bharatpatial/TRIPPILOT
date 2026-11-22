@@ -241,7 +241,6 @@ export default function JourneyPage() {
                   <button key={key} type="button" className={category === key ? "active" : ""} onClick={() => updateJourney({ category: key })}>{categoryLabels[key]} <small>{key === "all" ? result.facilities.length : result.facilities.filter((item) => item.category === key).length}</small></button>
                 ))}
               </div>
-              {result.facilitiesWarning && <div className="journeyAlert">{result.facilitiesWarning}</div>}
               {!filteredFacilities.length ? (
                 <div className="journeyEmptyStops">No mapped {category === "all" ? "places" : categoryLabels[category].toLowerCase()} were found near this route. Try another route or search again later.</div>
               ) : (
